@@ -68,9 +68,11 @@ The following arguments are supported:
 
 * `connection_policy` - (Optional) The connection policy the server will use. Possible values are `Default`, `Proxy`, and `Redirect`. Defaults to `Default`.
 
+* `extended_auditing_policy` - (Optional) A `extended_auditing_policy` block as defined below.
+
 * `identity` - (Optional) An `identity` block as defined below.
 
-* `extended_auditing_policy` - (Optional) A `extended_auditing_policy` block as defined below.
+* `public_network_access_enabled` - (Optional) Whether or not public network access is allowed to this server. Defaults to `true`. 
 
 * `tags` - (Optional) A mapping of tags to assign to the resource.
 

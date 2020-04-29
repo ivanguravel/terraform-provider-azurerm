@@ -49,16 +49,6 @@ func resourceArmMsSqlServer() *schema.Resource {
 
 			"resource_group_name": azure.SchemaResourceGroupName(),
 
-			"version": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-				ValidateFunc: validation.StringInSlice([]string{
-					"2.0",
-					"12.0",
-				}, true),
-			},
-
 			"administrator_login": {
 				Type:     schema.TypeString,
 				Required: true,
@@ -70,6 +60,17 @@ func resourceArmMsSqlServer() *schema.Resource {
 				Required:  true,
 				Sensitive: true,
 			},
+			"version": {
+				Type:     schema.TypeString,
+				Required: true,
+				ForceNew: true,
+				ValidateFunc: validation.StringInSlice([]string{
+					"2.0",
+					"12.0",
+				}, true),
+			},
+
+			"extended_auditing_policy": helper.ExtendedAuditingSchema(),
 
 			"connection_policy": {
 				Type:     schema.TypeString,
@@ -107,7 +108,22 @@ func resourceArmMsSqlServer() *schema.Resource {
 				},
 			},
 
-			"extended_auditing_policy": helper.ExtendedAuditingSchema(),
+			"public_network_access_enabled": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  true,
+			},
+
+			// exists in SDK however API seems to ignore it: https://github.com/Azure/azure-sdk-for-go/issues/8663
+			/*"ssl_minimal_tls_version_enforced": {
+				Type:     schema.TypeString,
+				Optional: true,
+				ValidateFunc: validation.StringInSlice([]string{
+					"1.0",
+					"1.1",
+					"1.2",
+				}, false),
+			},*/
 
 			"fully_qualified_domain_name": {
 				Type:     schema.TypeString,
@@ -152,19 +168,23 @@ func resourceArmMsSqlServerCreateUpdate(d *schema.ResourceData, meta interface{}
 		Location: utils.String(location),
 		Tags:     metadata,
 		ServerProperties: &sql.ServerProperties{
-			Version:            utils.String(version),
-			AdministratorLogin: utils.String(adminUsername),
+			Version:             utils.String(version),
+			AdministratorLogin:  utils.String(adminUsername),
+			PublicNetworkAccess: sql.ServerPublicNetworkAccessEnabled,
 		},
-	}
-
-	if _, ok := d.GetOk("identity"); ok {
-		sqlServerIdentity := expandAzureRmSqlServerIdentity(d)
-		parameters.Identity = sqlServerIdentity
 	}
 
 	if d.HasChange("administrator_login_password") {
 		adminPassword := d.Get("administrator_login_password").(string)
 		parameters.ServerProperties.AdministratorLoginPassword = utils.String(adminPassword)
+	}
+
+	if v := d.Get("public_network_access_enabled"); !v.(bool) {
+		parameters.ServerProperties.PublicNetworkAccess = sql.ServerPublicNetworkAccessDisabled
+	}
+
+	if _, ok := d.GetOk("identity"); ok {
+		parameters.Identity = expandAzureRmSqlServerIdentity(d)
 	}
 
 	future, err := client.CreateOrUpdate(ctx, resGroup, name, parameters)
@@ -242,10 +262,11 @@ func resourceArmMsSqlServerRead(d *schema.ResourceData, meta interface{}) error 
 		return fmt.Errorf("Error setting `identity`: %+v", err)
 	}
 
-	if serverProperties := resp.ServerProperties; serverProperties != nil {
-		d.Set("version", serverProperties.Version)
-		d.Set("administrator_login", serverProperties.AdministratorLogin)
-		d.Set("fully_qualified_domain_name", serverProperties.FullyQualifiedDomainName)
+	if props := resp.ServerProperties; props != nil {
+		d.Set("version", props.Version)
+		d.Set("administrator_login", props.AdministratorLogin)
+		d.Set("fully_qualified_domain_name", props.FullyQualifiedDomainName)
+		d.Set("public_network_access_enabled", props.PublicNetworkAccess == sql.ServerPublicNetworkAccessEnabled)
 	}
 
 	connection, err := connectionClient.Get(ctx, resGroup, name)
